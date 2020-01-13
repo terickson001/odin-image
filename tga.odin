@@ -257,9 +257,9 @@ convert_format :: proc(img: ^Image, from_depth: u32)
             g := i32(pixel >> 5  & 0x1f);
             b := i32(pixel >> 0  & 0x1f);
             
-            expanded[i*3+0] = byte((b * 255)/31);
+            expanded[i*3+0] = byte((r * 255)/31);
             expanded[i*3+1] = byte((g * 255)/31);
-            expanded[i*3+2] = byte((r * 255)/31);
+            expanded[i*3+2] = byte((b * 255)/31);
         }
 
         delete(img.data);
