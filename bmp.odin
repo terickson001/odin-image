@@ -2,6 +2,7 @@ package image
 
 import "core:fmt"
 import "core:os"
+import "core:mem"
 
 test_bmp :: proc(filepath: string) -> bool
 {
@@ -56,7 +57,11 @@ load_bmp :: proc(filepath: string) -> (image: Image)
     image.width  = width;
     image.height = height;
     image.depth  = 8;
-    image.format = .BGR;
+    image.format = .RGB;
+
+    pixels := mem.slice_data_cast([][3]byte, image.data);
+    for _, i in pixels do
+        pixels[i][0], pixels[i][2] = pixels[i][2], pixels[i][0];
     
     return image;
 }
