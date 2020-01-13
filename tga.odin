@@ -212,7 +212,7 @@ load_tga :: proc(filepath: string) -> (image: Image)
     switch result_depth
     {
     case 15: image.format = .RGB;
-    case 16: image.format = .RGBA;
+    case 16: image.format = .RGB;
     case 24: image.format = .RGB;
     case 32: image.format = .RGBA;
     case:
@@ -260,9 +260,6 @@ convert_format :: proc(img: ^Image, from_depth: u32)
             expanded[i*3+0] = byte((b * 255)/31);
             expanded[i*3+1] = byte((g * 255)/31);
             expanded[i*3+2] = byte((r * 255)/31);
-            // fmt.printf("pixel: %016b, expanded: %v\n", pixel, expanded[i*3:i*3+3]);
-            if components == 4 do
-                expanded[i+3] = (byte(pixel) & 0x01) * 255;
         }
 
         delete(img.data);
