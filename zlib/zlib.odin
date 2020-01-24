@@ -281,16 +281,14 @@ _decode_huffman :: proc(using z_buff: ^Buffer, using huff: Huffman, loc := #call
 
 deflate :: proc(using z_buff: ^Buffer)
 {
-    decompressed_data := make([]byte, 1024*1024); // 1MiB
-    data_index := u32(0);
+    decompressed_data := make([dynamic]byte, 0, 1024*1024); // 1MiB
     for
     {
         decoded_value := _decode_huffman(z_buff, huff_lit);
         if decoded_value == 256 do break;
         if decoded_value < 256
         {
-            decompressed_data[data_index] = byte(decoded_value);
-            data_index += 1;
+            append(&decompressed_data, byte(decoded_value));
             continue;
         }
  
@@ -302,20 +300,17 @@ deflate :: proc(using z_buff: ^Buffer)
             distance_index := _decode_huffman(z_buff, huff_dist);
             distance_length := base_dists[distance_index] + read_bits(z_buff, dist_extra_bits[distance_index]);
 
-            back_pointer_index := data_index - distance_length;
+            back_pointer_index := u32(len(decompressed_data)) - distance_length;
             for duplicate_length > 0
             {
-                decompressed_data[data_index] = decompressed_data[back_pointer_index];
-                data_index         += 1;
+                append(&decompressed_data, decompressed_data[back_pointer_index]);
                 back_pointer_index += 1;
                 duplicate_length   -= 1;
             }
         }
     }
  
-    bytes_read := data_index;
- 
-    append(&out, ..decompressed_data[:bytes_read]);
+    append(&out, ..decompressed_data[:]);
     delete(decompressed_data);
 }
 
