@@ -3,7 +3,8 @@ package image
 import "core:fmt"
 import "core:mem"
 import "core:os"
-
+import m "core:math"
+import "core:hash"
 import "zlib"
 
 @private
@@ -82,6 +83,300 @@ Filter :: enum
     Up,
     Avg,
     Paeth,
+}
+
+write_png_to_mem :: proc(image: Image, format: Image_Format, depth: u32) -> []byte
+{
+    image := image;
+    
+    p := PNG{};
+    p.width = image.width;
+    p.height = image.height;
+    p.components = u32(format) & 7;
+    p.depth = u8(depth);
+    
+    switch p.components
+    {
+    case 1: p.color = 0;
+    case 2: p.color = 4;
+    case 3: p.color = 2;
+    case 4: p.color = 6;
+    }
+
+    image.data = convert_format_png(image, format, depth);
+    image.depth = depth;
+    image.format = format;
+    
+    filtered   := filter_image(image, p);
+    compressed := zlib.compress(filtered, 8);
+    delete(filtered);
+
+    buffer := zlib.Bit_String{};
+    buffer.buffer = make([dynamic]byte, 0, 8 + 12+13 + 12+len(compressed) + 12);
+
+    zlib.bits_append(&buffer, u64(0x8950_4e47_0d0a_1a0a));
+    zlib.bits_append(&buffer, u32(13));
+    zlib.bits_append(&buffer, u32(IHDR));
+    zlib.bits_append(&buffer, u32(p.width));
+    zlib.bits_append(&buffer, u32(p.height));
+    zlib.bits_append(&buffer, u8(p.depth));
+    zlib.bits_append(&buffer, u8(p.color));
+    zlib.bits_append(&buffer, u8(0));
+    zlib.bits_append(&buffer, u8(0));
+    zlib.bits_append(&buffer, u8(0));
+    zlib.bits_append(&buffer, hash.crc32(buffer.buffer[len(buffer.buffer)-17:]));
+
+    zlib.bits_append(&buffer, u32(len(compressed)));
+    zlib.bits_append(&buffer, u32(IDAT));
+    zlib.bits_append(&buffer, compressed);
+    zlib.bits_append(&buffer, hash.crc32(buffer.buffer[len(buffer.buffer)-len(compressed)-4:]));
+
+    zlib.bits_append(&buffer, u32(0));
+    zlib.bits_append(&buffer, u32(IEND));
+    zlib.bits_append(&buffer, u32(0xae42_6082)); // Hard-coded IEND crc
+
+    out := make([]byte, len(buffer.buffer));
+    copy(out, buffer.buffer[:]);
+    delete(buffer.buffer);
+
+    return out;
+}
+
+write_png :: proc(image: Image, filepath: string, format: Image_Format, depth: u32)
+{
+    encoded := write_png_to_mem(image, format, depth);
+    defer delete(encoded);
+
+    os.write_entire_file(filepath, encoded);
+}
+
+@private
+convert_format_png :: proc(image: Image, to_format: Image_Format, to_depth: u32) -> []byte
+{
+    src_comp := u32(image.format) & 7;
+    out_comp := u32(to_format) & 7;
+
+    Change :: enum {
+        Remove = -1,
+        None   =  0,
+        Add    =  1,
+    };
+    
+    src_pixel_depth := u32(image.depth+7) >> 3;
+    out_pixel_depth := (to_depth+7) >> 3;
+
+    change_depth := Change(int(out_pixel_depth) - int(src_pixel_depth));
+    change_alpha := Change(int((src_comp % 2))  - int((out_comp % 2)));
+    change_color := Change(int((out_comp+1)/2)  - int((src_comp+1)/2));
+
+    converted := make([]byte, image.width*image.height*out_pixel_depth*out_comp);
+
+    pixel := [8]u8{};
+    for p in 0..<(image.width*image.height)
+    {
+        si := p*src_comp*src_pixel_depth;
+        oi := p*out_comp*out_pixel_depth;
+
+        /* Convert Depth, and store in intermediate value, `pixel` */
+        switch change_depth
+        {
+        case .Remove:
+            for p in 0..<(src_comp) do
+                (^u16)(&pixel[p*out_pixel_depth])^ = (^u16)(&image.data[si+p*2])^/257;
+            
+        case .Add:
+            for p in 0..<(src_comp) do
+                (^u16)(&pixel[p*out_pixel_depth])^ = u16(image.data[si+p])*257;
+            
+        case .None:
+            if src_pixel_depth == 1 do
+                for p in 0..<(src_comp) do
+                    (^u16)(&pixel[p*out_pixel_depth])^ = u16(image.data[si+p]);
+            else do
+                for p in 0..<(src_comp) do
+                    (^u16)(&pixel[p*out_pixel_depth])^ = (^u16)(&image.data[si+p*2])^;
+        }
+        
+
+        /* Convert color, RGB <-> Grayscale, and store in output */
+        switch change_color
+        {
+        case .Remove:
+            for b in 0..<(out_pixel_depth) do
+                converted[oi+b] = byte(
+                    (u32(pixel[out_pixel_depth*0+b]) +
+                     u32(pixel[out_pixel_depth*1+b]) +
+                     u32(pixel[out_pixel_depth*2+b])) / 3
+                );
+            
+        case .Add:
+            for i in 0..<(3*out_pixel_depth) do
+                converted[oi+u32(i)] = pixel[i%out_pixel_depth]+byte(i%out_pixel_depth);
+            
+        case .None:
+            for i in 0..<((out_comp + (out_comp%2)-1) * out_pixel_depth) do
+                converted[oi+i] = pixel[i];
+        }
+
+        /* Add or copy alpha channel to output */
+        switch change_alpha
+        {
+        case .Remove: break; // Ignore
+            
+        case .Add:
+            for b in 0..<(out_pixel_depth) do
+                converted[oi+(out_comp-1)*out_pixel_depth+b] = 255;
+            
+         case .None:
+            if src_comp % 2 == 0 do
+                for b in 0..<(out_pixel_depth) do
+                    converted[oi+(out_comp-1)*out_pixel_depth+b] = pixel[(src_comp-1)*out_pixel_depth+b];
+        }
+    }
+
+    return converted;
+}
+
+@private
+filter_image :: proc(image: Image, png: PNG) -> []byte
+{
+    pixel_depth := u32(png.depth+7) >> 3;
+    stride := image.width * png.components * pixel_depth + 1;
+    filtered := make([]byte, stride*image.height);
+
+    buf := make([]byte, stride-1);
+    defer delete(buf);
+    for row in 0..<(image.height)
+    {
+        best_filter := Filter.None;
+        best_entropy := ~u64(0);
+        for filter in Filter.None..<(Filter.Paeth)
+        {
+            filter_row(image, png, row, filter, buf);
+
+            entropy := u64(0);
+            for p in buf do
+                entropy += u64(abs(transmute(i8)p));
+
+            if entropy < best_entropy
+            {
+                best_entropy = entropy;
+                best_filter = filter;
+            }
+        }
+        if best_filter != .Paeth do
+            filter_row(image, png, row, best_filter, buf);
+
+        /* best_filter := Filter.Sub; */
+        /* filter_row(image, png, row, best_filter, buf); */
+        filtered[stride*row] = u8(best_filter);
+        copy(filtered[stride*row+1:], buf);
+    }
+
+    return filtered;
+}
+
+@private
+filter_row :: proc(image: Image, png: PNG, row_num: u32, filter: Filter, buf: []byte)
+{
+    src_comp := u32(image.format) & 7;
+
+    src_depth := (image.depth + 7) >> 3;
+    out_depth := u32(png.depth + 7) >> 3;
+
+    src_bytes := src_comp * src_depth;
+    out_bytes := png.components * out_depth;
+
+    prev_row: []byte = nil;
+    if row_num != 0 do
+        prev_row = image.data[(row_num-1)*image.width*src_bytes:row_num*image.width*src_bytes];
+    row := image.data[row_num*image.width*src_bytes:(row_num+1)*image.width*src_bytes];
+    switch filter
+    {
+    case .None:
+        for x in 0..<(image.width)
+        {
+            for k in 0..<(src_bytes)
+            {
+                si := x*src_bytes+k;
+                oi := x*out_bytes+k;
+
+                buf[oi] = row[si];
+            }
+        }
+        
+    case .Sub:
+        for x in 0..<(image.width)
+        {
+            for k in 0..<(src_bytes)
+            {
+                si := x*src_bytes+k;
+                oi := x*out_bytes+k;
+
+                a := u16(0);
+                if x != 0 do
+                    a = u16(row[si - src_bytes]);
+                buf[oi] = byte(u16(row[si]) - a);
+            }
+        }
+
+    case .Up:
+        for x in 0..<(image.width)
+        {
+            for k in 0..<(src_bytes)
+            {
+                si := x*src_bytes+k;
+                oi := x*out_bytes+k;
+
+                b := u16(0);
+                if row_num != 0 do
+                    b = u16(prev_row[si]);
+                buf[oi] = byte(u16(row[si]) - b);
+            }
+        }
+
+    case .Avg:
+        for x in 0..<(image.width)
+        {
+            for k in 0..<(src_bytes)
+            {
+                si := x*src_bytes+k;
+                oi := x*out_bytes+k;
+
+                a := u16(0);
+                b := u16(0);
+                if x != 0 do
+                    a = u16(row[si - src_bytes]);
+                if row_num != 0 do
+                    b = u16(prev_row[si]);
+                buf[oi] = byte(u16(row[si]) - (a+b)/2);
+            }
+        }
+        
+    case .Paeth:
+        for x in 0..<(image.width)
+        {
+            for k in 0..<(src_bytes)
+            {
+                si := x*src_bytes+k;
+                oi := x*out_bytes+k;
+
+                a := u16(0);
+                b := u16(0);
+                c := u16(0);
+                if x != 0
+                {
+                    a = u16(row[si - src_bytes]);
+                    if row_num != 0 do
+                        c = u16(prev_row[si - src_bytes]);
+                }
+                if row_num != 0 do
+                    b = u16(prev_row[si]);
+                paeth := paeth_predict(i32(a), i32(b), i32(c));
+                buf[oi] = byte(u16(row[si]) + u16(paeth));
+            }
+        }
+    }
 }
 
 test_png :: proc(filepath: string) -> bool
@@ -427,13 +722,6 @@ defilter :: proc(p: ^PNG, data: []byte, x, y: u32) -> []byte
             return nil;
         }
 
-        /* if bit_depth < 8 */
-        /* { */
-        /*     assert(img_width_bytes <= p.width); */
-        /*     off += p.width * p.out_components - img_width_bytes; */
-        /*     filter_bytes = 1; */
-        /*     x = img_width_bytes; */
-        /* } */
         working = image[off:];
 
         switch filter
@@ -472,7 +760,7 @@ defilter :: proc(p: ^PNG, data: []byte, x, y: u32) -> []byte
                     oi := j*output_bytes+k;
                     
                     b := u16(0);
-                    if y != 0 do
+                    if i != 0 do
                         b = u16(prev_row[oi]);
                     working[oi] = byte(u16(row[ri]) + b);
                 }
@@ -490,7 +778,7 @@ defilter :: proc(p: ^PNG, data: []byte, x, y: u32) -> []byte
                     b := u16(0);
                     if j != 0 do
                         a = u16(working[oi - output_bytes]);
-                    if y != 0 do
+                    if i != 0 do
                         b = u16(prev_row[oi]);
 
                     working[oi] = byte(u16(row[ri]) + (a+b)/2);
@@ -512,11 +800,11 @@ defilter :: proc(p: ^PNG, data: []byte, x, y: u32) -> []byte
                     if j != 0
                     {
                         a = u16(working[oi - output_bytes]);
-                        if y != 0 do
+                        if i != 0 do
                             c = u16(prev_row[oi - output_bytes]);
                     }
 
-                    if y != 0 do
+                    if i != 0 do
                         b = u16(prev_row[oi]);
                     
                    paeth := paeth_predict(i32(a), i32(b), i32(c));

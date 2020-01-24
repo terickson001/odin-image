@@ -225,14 +225,14 @@ load_tga :: proc(filepath: string) -> (image: Image)
     image.width = u32(width);
     image.height = u32(height);
     
-    convert_format(&image, u32(result_depth));
+    convert_format_tga(&image, u32(result_depth));
     image.depth = 8;
 
     return image;
 }
 
 @private
-convert_format :: proc(img: ^Image, from_depth: u32)
+convert_format_tga :: proc(img: ^Image, from_depth: u32)
 {
     components := u32(img.format) & 7;
 
