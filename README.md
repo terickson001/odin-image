@@ -4,4 +4,4 @@ An Work-In-Progress image encoding/decoding library for [Odin](https://github.co
 
 Currently supports TGA, BMP, and 8-bit/16-bit PNGs.
 
-Encoding is only support for PNGs at the moment.
+Encoding is only supported for PNGs and TGAs at the moment.
