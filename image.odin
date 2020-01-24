@@ -4,7 +4,7 @@ import "core:fmt"
 
 // Format: Lower 3 bits represent the number
 //         of components for the format
-Image_Format :: enum
+Image_Format :: enum u8
 {
     RGB   = 0b_000_011,
     RGBA  = 0b_000_100,
