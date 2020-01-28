@@ -29,6 +29,7 @@ Buffer :: struct
     check_value: u16,
 
     data: []byte,
+    DEBUG: bool,
     bit_buffer: u32,
     bits_remaining: u32,
     
@@ -281,14 +282,14 @@ _decode_huffman :: proc(using z_buff: ^Buffer, using huff: Huffman, loc := #call
 
 deflate :: proc(using z_buff: ^Buffer)
 {
-    decompressed_data := make([dynamic]byte, 0, 1024*1024); // 1MiB
+    // decompressed_data := make([dynamic]byte, 0, 1024*1024); // 1MiB
     for
     {
         decoded_value := _decode_huffman(z_buff, huff_lit);
         if decoded_value == 256 do break;
         if decoded_value < 256
         {
-            append(&decompressed_data, byte(decoded_value));
+            append(&out, byte(decoded_value));
             continue;
         }
  
@@ -300,18 +301,21 @@ deflate :: proc(using z_buff: ^Buffer)
             distance_index := _decode_huffman(z_buff, huff_dist);
             distance_length := base_dists[distance_index] + read_bits(z_buff, dist_extra_bits[distance_index]);
 
-            back_pointer_index := u32(len(decompressed_data)) - distance_length;
+            back_pointer_index := u32(len(out)) - distance_length;
             for duplicate_length > 0
             {
-                append(&decompressed_data, decompressed_data[back_pointer_index]);
+                /* if DEBUG do */
+                /*     fmt.printf("Decoded Value: %d\nDistance Length: %d\nBack Pointer: %d\n\n", */
+                /*                decoded_value, distance_length, back_pointer_index); */
+                append(&out, out[back_pointer_index]);
                 back_pointer_index += 1;
                 duplicate_length   -= 1;
             }
         }
     }
  
-    append(&out, ..decompressed_data[:]);
-    delete(decompressed_data);
+    // append(&out, ..decompressed_data[:]);
+    // delete(decompressed_data);
 }
 
 compute_huffman :: proc(using z_buff: ^Buffer)
@@ -381,6 +385,9 @@ decompress :: proc(using z_buff: ^Buffer)
         load_bits(z_buff, 8);
         final = bool(read_bits(z_buff, 1));
         type  = read_bits(z_buff, 2);
+        /* if DEBUG do */
+        /*     fmt.printf("TYPE: %d\n", type); */
+
         if type == 0
         {
             uncompressed(z_buff);
