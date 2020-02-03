@@ -24,7 +24,7 @@ test_bmp :: proc(filepath: string) -> bool
     return true;
 }
 
-load_bmp :: proc(filepath: string) -> (image: Image)
+load_bmp :: proc(filepath: string, desired_format: Image_Format = nil) -> (image: Image)
 {
     image = Image{};
     

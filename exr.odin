@@ -435,6 +435,7 @@ load_exr :: proc(filepath: string) -> (image: Image)
         part := Part{};
         read_header(&file, &part.header);
         append(&parts, part);
+        fmt.printf("HEADER: %#v\n", part.header);
     }
     else
     {
@@ -543,25 +544,22 @@ load_exr :: proc(filepath: string) -> (image: Image)
 
         data = make([]byte, data_size);
         working := data;
-        for chunk, c in chunks
-        {
-            debug := false;//c >= 7 && c <= 12;
-            if debug do
-                fmt.printf("y_coord: %d\n", chunk.variant.(Scanline_Chunk).y_coord);
-            reorder_channels(&working, chunk.data, pixel_width, channels, channel_sizes[:], debug);
-        }
+        for chunk, c in chunks do
+            reorder_channels(&working, chunk.data, pixel_width, channels, channel_sizes[:], dataWindow.max-dataWindow.min+1);
     }
 
     image.data = parts[0].data;
-    image.width = 1000;
-    image.height = 1000;
-    return;
+    image.width = cast(u32)(parts[0].displayWindow.max.x - parts[0].displayWindow.min.x+1);
+    image.height = cast(u32)(parts[0].displayWindow.max.y - parts[0].displayWindow.min.y+1);
+    
+    return image;
 }
 
 @private
-reorder_channels :: proc(out: ^[]byte, data: []byte, pixel_width: int, channels: []Channel, channel_sizes: []int, debug: bool)
+reorder_channels :: proc(out: ^[]byte, data: []byte, pixel_width: int, channels: []Channel, channel_sizes: []int, dims: [2]i32)
 {
     data := data;
+    
     channel_offsets := [32]u32{};
     pixel_offsets   := [32]u32{};
     for i in 1..(len(channels))
@@ -569,35 +567,25 @@ reorder_channels :: proc(out: ^[]byte, data: []byte, pixel_width: int, channels:
         channel_offsets[i] = channel_offsets[i-1] + u32((len(data) * channel_sizes[i-1]) / pixel_width);
         pixel_offsets[i]   = pixel_offsets[i-1]   + u32(channel_sizes[i-1]);
     }
-
     
-    pixels_count := len(data) / pixel_width;
-    pixel := [6]byte{};
-    pixel[0] = data[0+200];
-    pixel[1] = data[1+200];
-    pixel[2] = data[(len(data)/3)*1+0+200];
-    pixel[3] = data[(len(data)/3)*1+1+200];
-    pixel[4] = data[(len(data)/3)*2+0+200];
-    pixel[5] = data[(len(data)/3)*2+1+200];
-    // fmt.printf("channel_offsets: %v\npixel count: %d\n\n", channel_offsets, pixels_count);
-    for i in 0..<(pixels_count*len(channels))
+    scanlines := len(data)/(int(dims.x)*pixel_width);
+    for _ in 0..<(scanlines)
     {
-        p := i % pixels_count;
-        c := i / pixels_count;
-
-        dest := u32(pixel_width*p) + pixel_offsets[c];
-        // fmt.printf("dest(%d): %d\n", c, dest);
-        switch channels[c].pixel_type
+        for i in 0..<(int(dims.x)*len(channels))
         {
-            case .Uint:  (^u32)(&out[dest])^ = read_type(&data, u32);
-            case .Half:  (^u16)(&out[dest])^ = read_type(&data, u16);
-            case .Float: (^u32)(&out[dest])^ = read_type(&data, u32);
+            p := i % int(dims.x);
+            c := i / int(dims.x);
+
+            dest := u32(pixel_width*p) + pixel_offsets[c];
+            switch channels[c].pixel_type
+            {
+                case .Uint:  (^u32)(&out[dest])^ = read_type(&data, u32);
+                case .Half:  (^u16)(&out[dest])^ = read_type(&data, u16);
+                case .Float: (^u32)(&out[dest])^ = read_type(&data, u32);
+            }
         }
-        
+        out^ = out[int(dims.x)*pixel_width:];
     }
-    if debug do
-        fmt.printf("BEFORE: %v\nAFTER: %v\n\n", pixel, out[pixel_width*100:pixel_width*101]);
-    out^ = out[pixels_count*pixel_width:];
 }
 
 @private

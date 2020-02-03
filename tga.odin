@@ -60,7 +60,7 @@ test_tga :: proc(filepath: string) -> bool
     return true;
 }
 
-load_tga :: proc(filepath: string) -> (image: Image)
+load_tga :: proc(filepath: string, desired_format: Image_Format = nil) -> (image: Image)
 {
     image = Image{};
     

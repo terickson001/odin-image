@@ -21,14 +21,14 @@ Image :: struct
     flipped: [2]bool,
 }
 
-load :: proc(filepath: string) -> Image
+load :: proc(filepath: string, desired_format: Image_Format = nil) -> Image
 {
     if test_bmp(filepath) do
-        return load_bmp(filepath);
+        return load_bmp(filepath, desired_format);
     else if test_png(filepath) do
-        return load_png(filepath);
+        return load_png(filepath, desired_format);
     else if test_tga(filepath) do
-        return load_tga(filepath);
+        return load_tga(filepath, desired_format);
     else do
         fmt.eprintf("Unsupported filetype: %s\n", filepath);
     
