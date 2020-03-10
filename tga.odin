@@ -6,19 +6,11 @@ import "core:mem"
 import m "core:math"
 import "core:builtin"
 
-test_tga :: proc(filepath: string) -> bool
+test_tga :: proc{test_tga_file, test_tga_mem};
+test_tga_mem  :: proc(file: []byte) -> bool
 {
-    file, err := os.open(filepath);
-    if err != 0
-    {
-        fmt.eprintf("Image %q could not be opened\n", filepath);
-        return false;
-    }
-
-    header : [18]byte;
-
-    n_read, _ := os.read(file, header[:]);
-    if n_read != 18 do return false;
+    if len(file) != 18 do return false;
+    header := file[:18];
 
     cmap_type        := header[0x01];
     image_type       := header[0x02];
@@ -59,27 +51,32 @@ test_tga :: proc(filepath: string) -> bool
 
     return true;
 }
-
-load_tga :: proc(filepath: string, desired_format: Image_Format = nil) -> (image: Image)
+test_tga_file :: proc(filepath: string) -> bool
 {
-    image = Image{};
-    
-    header: [18]byte;
-
-    file, err := os.open(filepath);
-    if err != 0
+    file, ok := os.read_entire_file(filepath);
+    if !ok
     {
         fmt.eprintf("Image %q could not be opened\n", filepath);
-        return;
+        return false;
     }
 
-    n_read, _ := os.read(file, header[:]);
-    if n_read != 18
+    return test_tga_mem(file);
+}
+
+load_tga :: proc{load_tga_from_mem, load_tga_from_file};
+load_tga_from_mem :: proc(file: []byte, desired_format: Image_Format = nil, name := "<MEM>") -> (image: Image)
+{
+    file := file;
+    
+    if len(file) != 18
     {
-        fmt.eprintf("Image %q is not a valid TGA\n", filepath);
+        fmt.eprintf("Image %q is not a valid TGA\n", name);
         return;
     }
-
+    
+    header := file[:18];
+    file = file[18:];
+    
     // Read Header
     id_length        := header[0x00];
     cmap_type        := header[0x01];
@@ -94,59 +91,51 @@ load_tga :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
 
     RLE := bool(image_type & 0b1000);
     
-    /* fmt.printf("======= Load TGA (%s) =======\n", filepath); */
-    /* fmt.printf("cmap_type: %d\n", cmap_type); */
-    /* fmt.printf("cmap_start: %d\n", cmap_start); */
-    /* fmt.printf("cmap_len: %d\n", cmap_len); */
-    /* fmt.printf("cmap_depth: %d\n", cmap_depth); */
-
-    /* fmt.printf("id_length: %d\n", id_length); */
-    /* fmt.printf("image_type: %d\n", image_type); */
-    /* fmt.printf("  RLE?: %s\n", RLE?"Yes":"No"); */
-    /* fmt.printf("width: %d\n", width); */
-    /* fmt.printf("height: %d\n", height); */
-    /* fmt.printf("pixel_depth: %d\n", pixel_depth); */
-    /* fmt.printf("image_descriptor: %d\n", image_descriptor); */
-    /* fmt.printf("========================\n"); */
-    
     pixel_depth_bytes := (pixel_depth + 7) >> 3;
     cmap_depth_bytes  := (cmap_depth  + 7) >> 3;
 
     // Read image ID
-    image_id := make([]byte, id_length);
-    defer delete(image_id);
+    /* image_id := make([]byte, id_length); */
+    /* defer delete(image_id); */
+    image_id: []byte;
     if id_length > 0
     {
-        n_read, _ = os.read(file, image_id);
-        if n_read != int(id_length)
+        if len(file) < int(id_length)
         {
-            fmt.eprintf("Could not read image ID in TGA %q\n", filepath);
+            fmt.eprintf("Could not read image ID in TGA %q\n", name);
             return;
         }
+        image_id = file[:id_length];
+        file = file[id_length:];
     }
 
     // Read color map, if it exists
-    cmap_data := make([]byte, cmap_len*u16(cmap_depth_bytes));
-    defer delete(cmap_data);
+    /* cmap_data := make([]byte, cmap_len*u16(cmap_depth_bytes)); */
+    /* defer delete(cmap_data); */
+    cmap_data: []byte;
     if cmap_type != 0
     {
-        n_read, _ = os.read(file, cmap_data);
-        if  n_read != len(cmap_data)
+        // n_read, _ = os.read(file, cmap_data);
+        cmap_size := cmap_len*u16(cmap_depth_bytes);
+        if  len(file) < int(cmap_size)
         {
-            fmt.eprintf("Could not read colormap in TGA %q", filepath);
+            fmt.eprintf("Could not read colormap in TGA %q", name);
             return;
         }
+        cmap_data = file[:cmap_size];
+        file = file[cmap_size:];
     }
 
     // Read raw image data
     raw_image_data := make([]byte, width*height * u16(pixel_depth_bytes));
-    image_size, _ := os.read(file, raw_image_data);
-    if image_size == 0
+    if len(file) < len(raw_image_data)
     {
-        fmt.eprintf("Could not read image data in TGA %q", filepath);
+        fmt.eprintf("Could not read image data in TGA %q", name);
         return;
     }
-
+    copy(raw_image_data, file);
+    file = file[len(raw_image_data):];
+    
     image_data := raw_image_data;
     
     decoded_data_size := width*height * u16(pixel_depth_bytes);
@@ -219,7 +208,7 @@ load_tga :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
     case 24: image.format = .RGB;
     case 32: image.format = .RGBA;
     case:
-        fmt.eprintf("Invalid color depth '%d' in TGA %q\n", result_depth, filepath);
+        fmt.eprintf("Invalid color depth '%d' in TGA %q\n", result_depth, name);
         return;
     }
 
@@ -235,6 +224,19 @@ load_tga :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
     image.depth = 8;
 
     return image;
+}
+
+load_tga_from_file :: proc(filepath: string, desired_format: Image_Format = nil) -> (image: Image)
+{
+    
+    file, ok := os.read_entire_file(filepath);
+    if !ok
+    {
+        fmt.eprintf("Image %q could not be opened\n", filepath);
+        return;
+    }
+
+    return load_tga_from_mem(file, desired_format, filepath);
 }
 
 write_tga_to_mem :: proc(img: Image, format: Image_Format, depth: u32) -> []byte

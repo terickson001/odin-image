@@ -302,14 +302,10 @@ filter_row :: proc(image: Image, png: PNG, row_num: u32, filter: Filter, buf: []
     do_filter(filter_proc, false, image.width, row_num, src_bytes, out_bytes, buf, row, prev_row);
 }
 
-test_png :: proc(filepath: string) -> bool
+test_png :: proc{test_png_mem, test_png_file};
+test_png_mem :: proc(file: []byte) -> bool
 {
-    file, ok := os.read_entire_file(filepath);
-    if !ok
-    {
-        fmt.eprintf("Could not open file %s\n", filepath);
-        return false;
-    }
+    file := file;
     signature := _read_sized(&file, u64);
 
     if len(file) < 8 || signature != 0xa1a0a0d474e5089 do
@@ -318,25 +314,31 @@ test_png :: proc(filepath: string) -> bool
     return true;
 }
 
-load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image: Image)
+test_png_file :: proc(filepath: string) -> bool
 {
-    image = Image{};
-    
     file, ok := os.read_entire_file(filepath);
-    if png_err(!ok, filepath, "Could not open file") ||
-        png_err(len(file) < 8, filepath, "Invalid PNG file")
-    do return;
+    if !ok
+    {
+        fmt.eprintf("Could not open file %s\n", filepath);
+        return false;
+    }
+    
+    return test_png_mem(file);
+}
 
+load_png_from_mem :: proc(file: []byte, desired_format: Image_Format = nil, name := "<MEM>") -> (image: Image)
+{
+    file := file;
     signature := _read_sized(&file, u64);
 
-    if png_err(signature != 0xa1a0a0d474e5089, filepath, "Invalid PNG signature")
+    if png_err(signature != 0xa1a0a0d474e5089, name, "Invalid PNG signature")
     do return;
     
     trns   := [3]byte{};
     trns16 := [3]u16{};
 
     p := PNG{};
-    p.filepath = filepath;
+    p.filepath = name;
     first := true;
     loop: for
     {
@@ -347,8 +349,8 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
         switch chunk.type
         {
         case IHDR:
-            if png_err(!first, filepath, "Multiple IHDR") ||
-               png_err(chunk.size != 13, filepath, "Invalid IHDR length")
+            if png_err(!first, name, "Multiple IHDR") ||
+               png_err(chunk.size != 13, name, "Invalid IHDR length")
             do return;
 
             p.width     = u32(_read_sized(&chunk.data, u32be));
@@ -359,9 +361,9 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
             p.filter    = _read_sized(&chunk.data, byte);
             p.interlace = _read_sized(&chunk.data, byte);
 
-            if png_err(p.color > 6, filepath, "Invalid color type") ||
-               png_err(p.color == 1 || p.color == 5, filepath, "Invalid color type") ||
-               png_err(p.color == 3 && p.depth == 16, filepath, "Invalid color type")
+            if png_err(p.color > 6, name, "Invalid color type") ||
+               png_err(p.color == 1 || p.color == 5, name, "Invalid color type") ||
+               png_err(p.color == 3 && p.depth == 16, name, "Invalid color type")
             do return;
 
             if p.color == 3 do p.pal_components = 3;
@@ -382,17 +384,17 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
             {
                 p.components = 1; // palette index
                 
-                if png_err((1<<30) / p.width / 4 < p.height, filepath, "too large")
+                if png_err((1<<30) / p.width / 4 < p.height, name, "too large")
                 do return;
             }
 
         case PLTE:
-            if png_err(first, filepath, "First chunk not IHDR") ||
-               png_err(chunk.size > 256*3, filepath, "Invalid PLTE")
+            if png_err(first, name, "First chunk not IHDR") ||
+               png_err(chunk.size > 256*3, name, "Invalid PLTE")
             do return;
 
             p.pal_len = chunk.size / 3;
-            if png_err(p.pal_len * 3 != chunk.size, filepath, "Invalid PLTE")
+            if png_err(p.pal_len * 3 != chunk.size, name, "Invalid PLTE")
             do return;
             for i in 0..<(p.pal_len)
             {
@@ -404,14 +406,14 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
 
         case tRNS:
             
-            if png_err(first, filepath, "First chunk not IHDR") ||
-               png_err(len(p.data) > 0, filepath, "tRNS after IDAT")
+            if png_err(first, name, "First chunk not IHDR") ||
+               png_err(len(p.data) > 0, name, "tRNS after IDAT")
             do return;
             p.has_trans = true;
             if p.pal_components != 0
             {
-                if png_err(p.pal_len == 0, filepath, "tRNS before PLTE") ||
-                   png_err(chunk.size > p.pal_len, filepath, "Invalid tRNS")
+                if png_err(p.pal_len == 0, name, "tRNS before PLTE") ||
+                   png_err(chunk.size > p.pal_len, name, "Invalid tRNS")
                 do return;
 
                 p.pal_components = 4;
@@ -420,8 +422,8 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
             }
             else
             {
-                if png_err(~p.components & 1 != 0, filepath, "tRNS with alpha channel") ||
-                   png_err(chunk.size != u32(p.components*2), filepath, "Invalid tRNS")
+                if png_err(~p.components & 1 != 0, name, "tRNS with alpha channel") ||
+                   png_err(chunk.size != u32(p.components*2), name, "Invalid tRNS")
                 do return;
 
                 if p.depth == 16 do
@@ -433,7 +435,7 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
             }
             
         case IDAT:
-            if png_err(first, filepath, "First chunk not IHDR") do
+            if png_err(first, name, "First chunk not IHDR") do
                 return;
 
             if p.data == nil do
@@ -443,13 +445,13 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
         
 
             case IEND:
-            if png_err(first, filepath, "First chunk not IHDR") ||
-               png_err(len(p.data) == 0, filepath, "No IDAT")
+            if png_err(first, name, "First chunk not IHDR") ||
+               png_err(len(p.data) == 0, name, "No IDAT")
             do return;
 
             z_buff := zlib.read_block(p.data[:]);
             zlib.decompress(&z_buff);
-            if png_err(len(z_buff.out) == 0, filepath, "Error decompressing PNG") do return;
+            if png_err(len(z_buff.out) == 0, name, "Error decompressing PNG") do return;
 
             delete(p.data);
 
@@ -474,7 +476,7 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
             break loop;
 
         case:
-            if png_err(first, filepath, "first not IHDR")
+            if png_err(first, name, "first not IHDR")
             do return;
         }
 
@@ -500,9 +502,7 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
     image.height = p.height;
     image.depth  = u32(p.depth);
 
-    image.data = make([]byte, len(p.out));
-    copy(image.data, p.out);
-    delete(p.out);
+    image.data = p.out[:];
 
     flip_y(&image);
     if desired_format != nil
@@ -513,7 +513,20 @@ load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image
         image.data = convert_format_png(image, desired_format, image.depth);
         image.format = desired_format;
     }
+
     return image;
+}
+
+load_png :: proc(filepath: string, desired_format: Image_Format = nil) -> (image: Image)
+{
+    image = Image{};
+    
+    file, ok := os.read_entire_file(filepath);
+    if png_err(!ok, filepath, "Could not open file") ||
+        png_err(len(file) < 8, filepath, "Invalid PNG file")
+    do return;
+    
+    return load_png_from_mem(file, desired_format);
 }
 
 @private

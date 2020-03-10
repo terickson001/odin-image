@@ -4,41 +4,50 @@ import "core:fmt"
 import "core:os"
 import "core:mem"
 
-test_bmp :: proc(filepath: string) -> bool
+test_bmp :: proc{test_bmp_mem, test_bmp_file};
+test_bmp_mem :: proc(file: []byte) -> bool
 {
-    file, err := os.open(filepath);
-    if err != 0
-    {
-        fmt.eprintf("Image %q could not be opened\n", filepath);
+    if len(file) < 54 do
         return false;
-    }
-    
-    header: [54]byte;
-    n_read, _ := os.read(file, header[:]);
-    if n_read != 54 ||
-        header[0] != 'B' || header[1] != 'M'
-    {
+    if file[0] != 'B' || file[1] != 'M' do
         return false;
-    }
 
     return true;
 }
 
-load_bmp :: proc(filepath: string, desired_format: Image_Format = nil) -> (image: Image)
+test_bmp_file :: proc(filepath: string) -> bool
 {
-    image = Image{};
-    
     file, ok := os.read_entire_file(filepath);
     if !ok
     {
         fmt.eprintf("Image %q could not be opened\n", filepath);
-        return;
+        return false;
     }
+    
+    return test_bmp_mem(file);
+}
+
+load_bmp ::  proc{load_bmp_from_file, load_bmp_from_mem};
+load_bmp_from_file :: proc(filepath: string, desired_format: Image_Format = nil) -> Image
+{
+    file, ok := os.read_entire_file(filepath);
+    if !ok
+    {
+        fmt.eprintf("Image %q could not be opened\n", filepath);
+        return {};
+    }
+    
+    return load_bmp_from_mem(file, desired_format, filepath);
+}
+
+load_bmp_from_mem :: proc(file: []byte, desired_format: Image_Format = nil, name := "<MEM>") -> (image: Image)
+{
+    image = Image{};
     
     if len(file) < 54 ||
         file[0] != 'B' || file[1] != 'M'
     {
-        fmt.eprintf("Image %q is not a valid BMP\n", filepath);
+        fmt.eprintf("Image %q is not a valid BMP\n", name);
         return;
     }
 

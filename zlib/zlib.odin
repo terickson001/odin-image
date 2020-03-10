@@ -60,9 +60,10 @@ read_block :: proc(data: []byte) -> Buffer
     z_buff := Buffer{};
     z_buff.cmf = _read_sized(&data, byte);
     z_buff.extra_flags = _read_sized(&data, byte);
- 
-    z_buff.data = make([]byte, len(data)-4);
-    copy(z_buff.data, data);
+
+    z_buff.data = data[:len(data)-4];
+    /* z_buff.data = make([]byte, len(data)-4); */
+    /* copy(z_buff.data, data); */
     
     z_buff.check_value = u16(_read_sized(&data, u16be));
 
