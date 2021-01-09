@@ -8,7 +8,7 @@ import "core:intrinsics"
 import "core:sort"
 import "core:strings"
 
-import "zlib"
+import "shared:compress/zlib"
 
 @private
 read_type :: proc(file: ^[]byte, $T: typeid) -> T
@@ -18,7 +18,6 @@ read_type :: proc(file: ^[]byte, $T: typeid) -> T
         fmt.eprintf("Expected %v, got EOF\n", typeid_of(T));
         return T(0);
     }
-
     
     ret := ((^T)(&file[0]))^;
     file^ = file[size_of(T):];
@@ -30,22 +29,22 @@ read_type :: proc(file: ^[]byte, $T: typeid) -> T
 read_typeid :: proc(file: ^[]byte, store: uintptr, id: typeid, loc := #caller_location)
 {
     ti := type_info_of(id);
-
+    
     #partial switch sub_type in ti.variant
     {
-    case runtime.Type_Info_String:
+        case runtime.Type_Info_String:
         read_slice(file, store, type_info_of(typeid_of(byte)), 0);
-    case runtime.Type_Info_Slice:
+        case runtime.Type_Info_Slice:
         read_slice(file, store, sub_type.elem, 0);
-    case runtime.Type_Info_Struct:
+        case runtime.Type_Info_Struct:
         read_packed_struct(file, store, sub_type);
-    case:
+        case:
         if len(file^) < ti.size
         {
             fmt.eprintf("%#v: Expected %v, got EOF\n", loc, id);
             return;
         }
-
+        
         mem.copy(rawptr(store), &file[0], ti.size);
         file^ = file[ti.size:];
     }
@@ -184,25 +183,25 @@ Header :: struct
     pixelAspectRatio   : f32,
     screenWindowCenter : [2]f32,
     screenWindowWidth  : f32,
-
+    
     /* Optional for all Files */
     comments           : string,
-
+    
     /* Required for tiled image */
     tiles              : Tile_Desc,
-
+    
     /* Required for multi-part and deep data files */
     name               : string,
     type               : Header_Type,
     version            : i32,
     chunkCount         : i32,
-
+    
     /* Required for deep data images */
     maxSamplesPerPixel : i32,
-
+    
     /* Optional for multi-part files */
     view               : string,
-
+    
     /* Unknown requirements */
     chromaticities     : Chromaticities,
     taWindow           : Box(i32),
@@ -225,7 +224,7 @@ header_map :: proc(using header: ^Header) -> map[string]Header_Field
     @static field_names:   []string;
     @static field_offsets: []uintptr;
     @static field_types:   []^runtime.Type_Info;
-
+    
     if field_names == nil
     {
         ti := runtime.type_info_base(type_info_of(Header));
@@ -234,11 +233,13 @@ header_map :: proc(using header: ^Header) -> map[string]Header_Field
         field_offsets = s.offsets;
         field_types   = s.types;
     }
-
+    
     hmap := make(map[string]Header_Field, len(field_names));
-
-    for _, i in field_names do
+    
+    for _, i in field_names 
+    {
         hmap[field_names[i]] = {uintptr(header) + field_offsets[i], field_types[i]};
+    }
     
     return hmap;
 }
@@ -247,8 +248,10 @@ header_map :: proc(using header: ^Header) -> map[string]Header_Field
 read_cstring :: proc(file: ^[]byte) -> string
 {
     idx := 0;
-    for file[idx] != 0 do
+    for file[idx] != 0 
+    {
         idx += 1;
+    }
     
     str := transmute(string)file[:idx];
     file^ = file[idx+1:];
@@ -258,8 +261,10 @@ read_cstring :: proc(file: ^[]byte) -> string
 @private
 read_packed_struct :: proc(file: ^[]byte, store: uintptr, using ti: runtime.Type_Info_Struct)
 {
-    for _, i in types do
+    for _, i in types 
+    {
         read_typeid(file, store+offsets[i], types[i].id);
+    }
 }
 
 @private
@@ -269,8 +274,10 @@ read_slice :: proc(file: ^[]byte, store: uintptr, elem_ti: ^runtime.Type_Info, s
     data: []byte;
     if size == 0 // Null-Terminated
     {
-        for file[size] != 0 do
+        for file[size] != 0 
+        {
             size += 1;
+        }
         data = file[:size];
         file^ = file[size+1:];
     }
@@ -279,11 +286,11 @@ read_slice :: proc(file: ^[]byte, store: uintptr, elem_ti: ^runtime.Type_Info, s
         data = file[:size];
         file^ = file[size:];
     }
-
+    
     
     slice_data_count := int(size) / elem_ti.size;
     slice_data := mem.alloc(slice_data_count*elem_ti.size);
-
+    
     if sub_type, ok := elem_ti.variant.(runtime.Type_Info_Struct); ok
     {
         idx := 0;
@@ -293,8 +300,8 @@ read_slice :: proc(file: ^[]byte, store: uintptr, elem_ti: ^runtime.Type_Info, s
             {
                 // @Note(Tyler): This allocation assumes the estimate was fairly close
                 slice_data = mem.resize(slice_data,
-                                         slice_data_count     * elem_ti.size,
-                                         (slice_data_count+1) * elem_ti.size);
+                                        slice_data_count     * elem_ti.size,
+                                        (slice_data_count+1) * elem_ti.size);
                 slice_data_count += 1;
             }
             
@@ -311,7 +318,7 @@ read_slice :: proc(file: ^[]byte, store: uintptr, elem_ti: ^runtime.Type_Info, s
             idx += 1;
         }
     }
-
+    
     slice := cast(^mem.Raw_Slice)store;
     slice.data = slice_data;
     slice.len  = slice_data_count;
@@ -320,10 +327,10 @@ read_slice :: proc(file: ^[]byte, store: uintptr, elem_ti: ^runtime.Type_Info, s
 @private
 read_string_vector :: proc(file : ^[]byte, store: uintptr, size: i32)
 {
-
+    
     data := file[:size];
     file^ = file[size:];
-
+    
     strs := make([dynamic]string);
     
     for len(data) > 0
@@ -333,7 +340,7 @@ read_string_vector :: proc(file : ^[]byte, store: uintptr, size: i32)
         read_slice(&data, uintptr(&str), type_info_of(typeid_of(u8)), size);
         append(&strs, str);
     }
-
+    
     out := cast(^[]string)store;
     out^ = make([]string, len(strs));
     copy(out^, strs[:]);
@@ -344,51 +351,55 @@ read_string_vector :: proc(file : ^[]byte, store: uintptr, size: i32)
 read_header :: proc(file: ^[]byte, header: ^Header)
 {
     hmap := header_map(header);
-
+    
     for file[0] != 0
     {
         attr := read_cstring(file);
         type_str := read_cstring(file);
         size := read_type(file, i32);
-
-        if attr == "channels" do
+        
+        if attr == "channels" 
+        {
             size -= 1;
+        }
         field, ok := hmap[attr];
         if !ok
         {
             fmt.eprintf("ERROR: Unknown attribute (%s: %s) in header\n", attr, type_str);
             os.exit(1);
         }
-
+        
         type := field.type;
         #partial switch sub_type in type.variant
         {
-        case runtime.Type_Info_String:
+            case runtime.Type_Info_String:
             read_slice(file, field.field, type_info_of(typeid_of(u8)), size);
             
-        case runtime.Type_Info_Slice:
+            case runtime.Type_Info_Slice:
             #partial switch elem_type in sub_type.elem.variant
             {
-            case runtime.Type_Info_String:
+                case runtime.Type_Info_String:
                 read_string_vector(file, field.field, size);
                 
-            case:
+                case:
                 read_slice(file, field.field, runtime.type_info_base(sub_type.elem), size);
-                if attr == "channels" do
+                if attr == "channels" 
+                {
                     file^ = file[1:]; // skip null byte
+                }
             }
             
-        case runtime.Type_Info_Struct:
+            case runtime.Type_Info_Struct:
             read_packed_struct(file, field.field, sub_type);
             
-        case:
+            case:
             read_typeid(file, field.field, type.id);
         }
-
+        
     }
-
+    
     file^ = file[1:]; // Skip null byte
-
+    
     // fmt.printf("HEADER:\n%#v\n", header^);
 }
 
@@ -396,38 +407,44 @@ read_header :: proc(file: ^[]byte, header: ^Header)
 load_exr :: proc(filepath: string) -> (image: Image)
 {
     image = Image{};
-
+    
     file, ok := os.read_entire_file(filepath);
     if !ok
     {
         fmt.eprintf("ERROR: Could not open file %q\n", filepath);
         return;
     }
-
+    
     signature := read_type(&file, u32be);
-
+    
     if signature != 0x762f3101
     {
         fmt.eprintf("ERROR: File %q is not a valid EXR\n", filepath);
         return;
     }
-
+    
     version := read_type(&file, u32);
     tiled      := bool(version & 0x0200);
     long_names := bool(version & 0x0400);
     non_image  := bool(version & 0x0800);
     multipart  := bool(version & 0x1000);
-
+    
+    fmt.printf("tiled: %v\nlong_names: %v\nnon_image: %v\nmultipart: %v\n",
+               tiled, long_names, non_image, multipart);
     if tiled && (non_image || multipart)
     {
         fmt.eprintf("%s: ERROR: Tiled image cannot be multipart, or contain deep data\n", filepath);
         return;
     }
-
+    
     scanline := false;
-    if !(tiled || non_image || multipart) do
+    if !(tiled || non_image || multipart) 
+    {
         scanline = true;
-
+    }
+    fmt.printf("tiled: %v\nlong_names: %v\nnon_image: %v\nmultipart: %v\nscanline: %v\n",
+               tiled, long_names, non_image, multipart, scanline);
+    
     /* Read Headers */
     parts := make([dynamic]Part, 0, 1);
     if !multipart
@@ -439,7 +456,6 @@ load_exr :: proc(filepath: string) -> (image: Image)
     }
     else
     {
-        fmt.printf("Multipart");
         for file[0] != 0
         {
             part := Part{};
@@ -448,7 +464,7 @@ load_exr :: proc(filepath: string) -> (image: Image)
         }
         fmt.printf("PART COUNT: %d\n", len(parts));
     }
-
+    
     /* Read Offset Tables */
     for part, i in parts
     {
@@ -464,76 +480,82 @@ load_exr :: proc(filepath: string) -> (image: Image)
             }
             else // Tiled
             {
-                // @Todo(Tyler): Understand how this works
+                // @todo(Tyler): Understand how this works
             }
         }
-
+        
         parts[i].offsets = make([]u64, table_size);
-        for _, o in parts[i].offsets do
+        for _, o in parts[i].offsets 
+        {
             parts[i].offsets[o] = read_type(&file, u64);
+        }
     }
-
+    
     /* Read Chunks */
     for len(file) > 0
     {
         parti := u64(0);
-        if multipart do
+        if multipart 
+        {
             parti = read_type(&file, u64);
+        }
         part := &parts[parti];
         chunk := Chunk{};
         switch part.type
         {
-        case .Scanline:
+            case .Scanline:
             using sc_chunk := Scanline_Chunk{};
             
             y_coord = read_type(&file, i32);
+            fmt.println("y_coord:", y_coord);
             data_size = read_type(&file, i32);
             read_slice(&file, uintptr(&chunk.data), type_info_of(typeid_of(u8)), data_size);
             
             chunk.variant = sc_chunk;
             
-        case .Tiled:
-            // @Todo(Tyler) Implement
-        case .Deep_Scanline:
-            // @Todo(Tyler) Implement
-        case .Deep_Tiled:
-            // @Todo(Tyler) Implement
+            case .Tiled:
+            // @todo(Tyler) Implement
+            case .Deep_Scanline:
+            // @todo(Tyler) Implement
+            case .Deep_Tiled:
+            // @todo(Tyler) Implement
         }
         
         
-        // fmt.printf("CHUNK #%d\n", len(part.chunks));
+        fmt.printf("CHUNK #%d\n", len(part.chunks));
         switch part.compression
         {
-        case .None:
+            case .None:
             
-        case .RLE:
+            case .RLE:
             
-        case .ZIPS:
+            case .ZIPS:
             
-        case .ZIP:
+            case .ZIP:
             decompress_zip(&chunk);
-        case .PIZ:
+            case .PIZ:
             
-        case .PXR24:
+            case .PXR24:
             decompress_pxr24(&chunk);
-        case .B44:
+            case .B44:
             
-        case .B44A:
+            case .B44A:
             
         }
         
         append(&part.chunks, chunk);
         part.data_size += i32(len(chunk.data));
     }
-
+    
     // Re-order pixel-data
     for _, i in parts
     {
         using part := &parts[i];
-
+        
         _channel_sort :: proc(a, b: Channel) -> int { return strings.compare(a.name, b.name); }
         sort.quick_sort_proc(channels, _channel_sort);
-
+        fmt.printf("Channels: %#v\n", channels);
+        
         channel_sizes := [32]int{};
         pixel_width := int(0);
         for _, j in channels
@@ -541,16 +563,22 @@ load_exr :: proc(filepath: string) -> (image: Image)
             channel_sizes[j] = channels[j].pixel_type == .Half ? 2 : 4;
             pixel_width += channel_sizes[j];
         }
-
+        
+        dims := dataWindow.max-dataWindow.min+1;
         data = make([]byte, data_size);
+        assert(int(data_size) == int(dims.x*dims.y)*pixel_width);
         working := data;
-        for chunk, c in chunks do
-            reorder_channels(&working, chunk.data, pixel_width, channels, channel_sizes[:], dataWindow.max-dataWindow.min+1);
+        for chunk, c in chunks 
+        {
+            reorder_channels(&working, chunk.data, pixel_width, channels, channel_sizes[:], dims);
+        }
     }
-
+    
     image.data = parts[0].data;
     image.width = cast(u32)(parts[0].displayWindow.max.x - parts[0].displayWindow.min.x+1);
     image.height = cast(u32)(parts[0].displayWindow.max.y - parts[0].displayWindow.min.y+1);
+    fmt.printf("w: %d\nh: %d\n", image.width, image.height);
+    // flip_y(&image);
     
     return image;
 }
@@ -560,31 +588,77 @@ reorder_channels :: proc(out: ^[]byte, data: []byte, pixel_width: int, channels:
 {
     data := data;
     
+    assert(len(data)%(int(dims.x)*pixel_width) == 0);
     channel_offsets := [32]u32{};
     pixel_offsets   := [32]u32{};
     for i in 1..(len(channels))
     {
-        channel_offsets[i] = channel_offsets[i-1] + u32((len(data) * channel_sizes[i-1]) / pixel_width);
+        channel_offsets[i] = channel_offsets[i-1] + u32(int(dims.x) * channel_sizes[i-1]);
         pixel_offsets[i]   = pixel_offsets[i-1]   + u32(channel_sizes[i-1]);
     }
     
     scanlines := len(data)/(int(dims.x)*pixel_width);
+    assert(scanlines == 16);
+    track := make([]b8, dims.x);
     for _ in 0..<(scanlines)
     {
-        for i in 0..<(int(dims.x)*len(channels))
+        for _, c in channels
         {
-            p := i % int(dims.x);
-            c := i / int(dims.x);
-
-            dest := u32(pixel_width*p) + pixel_offsets[c];
-            switch channels[c].pixel_type
+            
+            src := channel_offsets[c];
+            dest := int(pixel_offsets[c]);
+            fmt.printf("Sorting all %q components:\n  First: %d\n  Interval: %d\n", 
+                       channels[c].name, dest, pixel_width);
+            for x in 0..<(int(dims.x))
             {
-                case .Uint:  (^u32)(&out[dest])^ = read_type(&data, u32);
-                case .Half:  (^u16)(&out[dest])^ = read_type(&data, u16);
-                case .Float: (^u32)(&out[dest])^ = read_type(&data, u32);
+                /*
+                                switch channels[c].pixel_type
+                                {
+                                    case .Uint:  (^u32)(&out[dest])^ = read_type(&data, u32);
+                                    case .Half:  (^u16)(&out[dest])^ = read_type(&data, u16);
+                                    case .Float: (^u32)(&out[dest])^ = read_type(&data, u32);
+                                }
+                */
+                
+                switch channels[c].pixel_type
+                {
+                    case .Half:  mem.copy(&out[dest], &data[src], 2);
+                    case .Uint:  mem.copy(&out[dest], &data[src], 4);
+                    case .Float: mem.copy(&out[dest], &data[src], 4); if (^f32)(&data[src])^ != 0.0 do track[x] = true;
+                }
+                
+                
+                src += u32(channel_sizes[c]);
+                dest += pixel_width;
             }
+            fmt.printf("  Last:%d\n", dest-pixel_width);
         }
+        for x in track 
+        {
+            assert(bool(x));
+        }
+        data = data[int(dims.x)*pixel_width:];
+        
+        /*
+                for i in 0..<(int(dims.x)*len(channels))
+                {
+                    p := i % int(dims.x);
+                    c := i / int(dims.x);
+                    
+                    dest := u32(pixel_width*p) + pixel_offsets[c];
+                    switch channels[c].pixel_type
+                    {
+                        case .Uint:  (^u32)(&out[dest])^ = read_type(&data, u32);
+                        case .Half:  (^u16)(&out[dest])^ = read_type(&data, u16);
+                        case .Float: (^u32)(&out[dest])^ = read_type(&data, u32);
+                    }
+                }
+*/
+        
+        
         out^ = out[int(dims.x)*pixel_width:];
+        
+        
     }
 }
 

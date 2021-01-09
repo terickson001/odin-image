@@ -141,10 +141,14 @@ load_tga_from_mem :: proc(file: []byte, desired_format: Image_Format = nil, name
     decoded_data_size := width*height * u16(pixel_depth_bytes);
     image_data_size: int;
 
-    if cmap_type != 0 do
+    if cmap_type != 0 
+    {
         image_data_size = int(width*height * u16(cmap_depth_bytes));
-    else do
+    }
+    else 
+    {
         image_data_size = int(decoded_data_size);
+    }
 
     // Read Run Length Encoded data
     if RLE
@@ -447,10 +451,14 @@ convert_format_tga :: proc(img: Image, to_format: Image_Format, to_depth: u32) -
         case .Remove: break; // Ignore
             
         case .Add:
-            if to_depth == 5 do
+            if to_depth == 5 
+            {
                 converted[p*2+1] |= 0x80;
-            else do
+            }
+            else 
+            {
                 converted[p*4+3] = 255;
+            }
             
         case .None:
             if src_comp % 2 != 0 do break;
@@ -461,10 +469,14 @@ convert_format_tga :: proc(img: Image, to_format: Image_Format, to_depth: u32) -
             case .Add:
                 converted[p*4+3]  = ((img.data[p*2+1] & 0x80) >> 7) * 255;
             case .None:
-                if to_depth == 5 do
+                if to_depth == 5 
+                {
                     converted[p*2+1] |= img.data[p*2+1] & 0x80;
-                else do
+                }
+                else 
+                {
                     converted[p*4+3]  = img.data[p*4+3];
+                }
             }
         }
     }

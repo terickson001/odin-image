@@ -1,5 +1,7 @@
 package image
 
+import "core:fmt"
+
 flip_y :: proc(img: ^Image)
 {
     pixel_depth := img.depth == 16 ? 2 : 1;

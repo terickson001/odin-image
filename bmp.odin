@@ -7,10 +7,14 @@ import "core:mem"
 test_bmp :: proc{test_bmp_mem, test_bmp_file};
 test_bmp_mem :: proc(file: []byte) -> bool
 {
-    if len(file) < 54 do
+    if len(file) < 54 
+    {
         return false;
-    if file[0] != 'B' || file[1] != 'M' do
+    }
+    if file[0] != 'B' || file[1] != 'M' 
+    {
         return false;
+    }
 
     return true;
 }
@@ -69,8 +73,10 @@ load_bmp_from_mem :: proc(file: []byte, desired_format: Image_Format = nil, name
     image.format = .RGB;
 
     pixels := mem.slice_data_cast([][3]byte, image.data);
-    for _, i in pixels do
+    for _, i in pixels 
+    {
         pixels[i][0], pixels[i][2] = pixels[i][2], pixels[i][0];
+    }
     
     return image;
 }
