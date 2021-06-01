@@ -725,7 +725,7 @@ deinterlace :: proc(p: ^PNG, data: []byte, size: u32) -> []byte
     return deinterlaced;
 }
 
-do_filter_none :: inline proc(reverse: bool,
+do_filter_none :: #force_inline proc(reverse: bool,
                               w, rowi, src_bytes, out_bytes: u32,
                               out, src, prev: []byte)
 #no_bounds_check
@@ -748,7 +748,7 @@ do_filter_none :: inline proc(reverse: bool,
     }
 }
 
-do_filter_sub :: inline proc(reverse: bool,
+do_filter_sub :: #force_inline proc(reverse: bool,
                              w, rowi, src_bytes, out_bytes: u32,
                              out, src, prev: []byte)
 #no_bounds_check
@@ -779,7 +779,7 @@ do_filter_sub :: inline proc(reverse: bool,
     }
 }
 
-do_filter_up :: inline proc(reverse: bool,
+do_filter_up :: #force_inline proc(reverse: bool,
                             w, rowi, src_bytes, out_bytes: u32,
                             out, src, prev: []byte)
 #no_bounds_check
@@ -810,7 +810,7 @@ do_filter_up :: inline proc(reverse: bool,
     }
 }
 
-do_filter_avg :: inline proc(reverse: bool,
+do_filter_avg :: #force_inline proc(reverse: bool,
                              w, rowi, src_bytes, out_bytes: u32,
                              out, src, prev: []byte)
 #no_bounds_check
@@ -846,7 +846,7 @@ do_filter_avg :: inline proc(reverse: bool,
     }
 }
 
-do_filter_paeth :: inline proc(reverse: bool,
+do_filter_paeth :: #force_inline proc(reverse: bool,
                                w, rowi, src_bytes, out_bytes: u32,
                                out, src, prev: []byte)
 #no_bounds_check
@@ -887,7 +887,7 @@ do_filter_paeth :: inline proc(reverse: bool,
 }
 
 @private
-expand_row :: inline proc(image: []byte, row: u32, depth: byte, grayscale: bool, src_stride, out_stride: u32)
+expand_row :: #force_inline proc(image: []byte, row: u32, depth: byte, grayscale: bool, src_stride, out_stride: u32)
 #no_bounds_check
 {
     scale := byte(1);

@@ -55,7 +55,7 @@ else
     {
         if stat, err := os.stat(path); err == os.ERROR_NONE 
         {
-            return os.S_ISREG(stat.mode);
+            return os.S_ISREG(u32(stat.mode));
         }
         return false;
     }
