@@ -44,8 +44,8 @@ when ODIN_OS == "windows"
         c_path  := win32.utf8_to_wstring(path, context.temp_allocator);
         attribs := win32.get_file_attributes_w(c_path);
         
-        return (i32(attribs) != win32.INVALID_FILE_ATTRIBUTES)
-            && ((attribs & win32.FILE_ATTRIBUTE_DIRECTORY) != win32.FILE_ATTRIBUTE_DIRECTORY);
+        return (i32(attribs) != win32.INVALID_FILE_ATTRIBUTES) &&
+            ((attribs & win32.FILE_ATTRIBUTE_DIRECTORY) != win32.FILE_ATTRIBUTE_DIRECTORY);
     }
 }
 else

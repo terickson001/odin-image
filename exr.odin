@@ -168,7 +168,7 @@ Chunk :: struct
         Tile_Chunk,
         Deep_Scanline_Chunk,
         Deep_Tile_Chunk,
-    }
+    },
 }
 
 @(private="file")
@@ -403,7 +403,7 @@ read_header :: proc(file: ^[]byte, header: ^Header)
     // fmt.printf("HEADER:\n%#v\n", header^);
 }
 
-@static SCANLINES_PER_BLOCK := [8]i32{1, 1, 1, 16, 32, 16, 32, 32};
+SCANLINES_PER_BLOCK := [8]i32{1, 1, 1, 16, 32, 16, 32, 32};
 load_exr :: proc(filepath: string) -> (image: Image)
 {
     image = Image{};

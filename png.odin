@@ -223,7 +223,7 @@ convert_format_png :: proc(image: Image, to_format: Image_Format, to_depth: u32)
                 converted[oi+b] = byte(
                                        (u32(pixel[out_pixel_depth*0+b]) +
                                         u32(pixel[out_pixel_depth*1+b]) +
-                                        u32(pixel[out_pixel_depth*2+b])) / 3
+                                        u32(pixel[out_pixel_depth*2+b])) / 3,
                                        );
             }
             
@@ -726,9 +726,8 @@ deinterlace :: proc(p: ^PNG, data: []byte, size: u32) -> []byte
 }
 
 do_filter_none :: #force_inline proc(reverse: bool,
-                              w, rowi, src_bytes, out_bytes: u32,
-                              out, src, prev: []byte)
-#no_bounds_check
+                                     w, rowi, src_bytes, out_bytes: u32,
+                                     out, src, prev: []byte)
 {
     si, oi: u32;
     if src_bytes == out_bytes
@@ -749,9 +748,8 @@ do_filter_none :: #force_inline proc(reverse: bool,
 }
 
 do_filter_sub :: #force_inline proc(reverse: bool,
-                             w, rowi, src_bytes, out_bytes: u32,
-                             out, src, prev: []byte)
-#no_bounds_check
+                                    w, rowi, src_bytes, out_bytes: u32,
+                                    out, src, prev: []byte)
 {
     si, oi: u32;
     a: u16;
@@ -780,9 +778,8 @@ do_filter_sub :: #force_inline proc(reverse: bool,
 }
 
 do_filter_up :: #force_inline proc(reverse: bool,
-                            w, rowi, src_bytes, out_bytes: u32,
-                            out, src, prev: []byte)
-#no_bounds_check
+                                   w, rowi, src_bytes, out_bytes: u32,
+                                   out, src, prev: []byte)
 {
     si, oi: u32;
     b: u16;
@@ -811,9 +808,8 @@ do_filter_up :: #force_inline proc(reverse: bool,
 }
 
 do_filter_avg :: #force_inline proc(reverse: bool,
-                             w, rowi, src_bytes, out_bytes: u32,
-                             out, src, prev: []byte)
-#no_bounds_check
+                                    w, rowi, src_bytes, out_bytes: u32,
+                                    out, src, prev: []byte)
 {
     si, oi: u32;
     a, b: u16;
@@ -847,9 +843,8 @@ do_filter_avg :: #force_inline proc(reverse: bool,
 }
 
 do_filter_paeth :: #force_inline proc(reverse: bool,
-                               w, rowi, src_bytes, out_bytes: u32,
-                               out, src, prev: []byte)
-#no_bounds_check
+                                      w, rowi, src_bytes, out_bytes: u32,
+                                      out, src, prev: []byte)
 {
     si, oi: u32;
     a, b, c: u16;
@@ -888,7 +883,6 @@ do_filter_paeth :: #force_inline proc(reverse: bool,
 
 @private
 expand_row :: #force_inline proc(image: []byte, row: u32, depth: byte, grayscale: bool, src_stride, out_stride: u32)
-#no_bounds_check
 {
     scale := byte(1);
     mask := (u32(1) << depth) - 1;
@@ -914,7 +908,6 @@ expand_row :: #force_inline proc(image: []byte, row: u32, depth: byte, grayscale
 
 @private
 defilter :: proc(p: ^PNG, data: []byte, x, y: u32) -> []byte
-#no_bounds_check
 {
     profile.scoped_zone();
     x := x;
@@ -1039,9 +1032,9 @@ compute_transparency8 :: proc(p: ^PNG, trans: [3]u8)
         for _, i in data
         {
             pixel := &data[i];
-            if pixel[0] == trans[0]
-                && pixel[1] == trans[1]
-                && pixel[2] == trans[2] 
+            if pixel[0] == trans[0] &&
+                pixel[1] == trans[1] &&
+                pixel[2] == trans[2] 
             {
                 pixel[3] = 0;
             }
@@ -1069,9 +1062,9 @@ compute_transparency16 :: proc(p: ^PNG, trans: [3]u16)
         for _, i in data
         {
             pixel := data[i];
-            if pixel[0] == trans[0]
-                && pixel[1] == trans[1]
-                && pixel[2] == trans[2] 
+            if pixel[0] == trans[0] &&
+                pixel[1] == trans[1] &&
+                pixel[2] == trans[2] 
             {
                 pixel[3] = 0;
             }
